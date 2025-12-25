@@ -1,5 +1,5 @@
 base:
-  project: trend-analysis
+  project: ml-orderflow
   data_dir: data
   model_dir: models
   log_dir: logs
@@ -41,7 +41,7 @@ preprocessing:
       ETHUSD: ["H4"]        # Merge ETH H4 (cross-timeframe self-context)
 
 train:
-  model_name: trend_analysis_model
+  model_name: ml_orderflow_model
   model_type: "xgboost"  # options: xgboost, lightgbm, random_forest, nhits, lstm
   freq: "h"  # pandas frequency string (e.g., 'h', 'min', 'd')
   lags: [1, 7, 24]
@@ -69,8 +69,8 @@ llm:
 
 mlflow:
   tracking_uri: sqlite:///mlflow.db
-  experiment_name: trend-analysis
-  model_registry_name: trend-analysis
+  experiment_name: ml-orderflow
+  model_registry_name: ml-orderflow
 
 schedule:
   interval_minutes: 60

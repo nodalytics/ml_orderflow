@@ -1,9 +1,9 @@
 import json
 import pandas as pd
 from typing import List, Dict, Any
-from trend_analysis.services.llm_provider import get_llm_provider
-from trend_analysis.utils.config import settings
-from trend_analysis.utils.initializer import logger_instance
+from ml_orderflow.services.llm_provider import get_llm_provider
+from ml_orderflow.utils.config import settings
+from ml_orderflow.utils.initializer import logger_instance
 
 logger = logger_instance.get_logger()
 

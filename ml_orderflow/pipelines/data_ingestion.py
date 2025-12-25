@@ -15,8 +15,8 @@ except ImportError:
     MT5_AVAILABLE = False
     mt5 = None
 
-from trend_analysis.utils.config import settings
-from trend_analysis.utils.initializer import logger_instance
+from ml_orderflow.utils.config import settings
+from ml_orderflow.utils.initializer import logger_instance
  
 logger = logger_instance.get_logger()
 

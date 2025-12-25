@@ -6,9 +6,9 @@ from mlforecast import MLForecast
 from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
 from sklearn.ensemble import RandomForestRegressor
-from trend_analysis.utils.config import settings
-from trend_analysis.utils.initializer import logger_instance
-from trend_analysis.ml.wrappers import ForecastWrapper
+from ml_orderflow.utils.config import settings
+from ml_orderflow.utils.initializer import logger_instance
+from ml_orderflow.ml.wrappers import ForecastWrapper
 from mlflow.models import infer_signature
 
 logger = logger_instance.get_logger()

@@ -2,8 +2,8 @@ import os
 import pandas as pd
 import numpy as np
 from typing import Literal
-from trend_analysis.utils.config import settings
-from trend_analysis.utils.initializer import logger_instance
+from ml_orderflow.utils.config import settings
+from ml_orderflow.utils.initializer import logger_instance
 
 logger = logger_instance.get_logger()
 

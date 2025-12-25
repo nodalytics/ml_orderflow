@@ -2,7 +2,7 @@ import os
 import abc
 from typing import Dict, Any, Optional
 import google.generativeai as genai
-from trend_analysis.utils.initializer import logger_instance
+from ml_orderflow.utils.initializer import logger_instance
 
 logger = logger_instance.get_logger()
 

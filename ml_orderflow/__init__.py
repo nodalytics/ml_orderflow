@@ -1,5 +1,5 @@
 def main():
-    print("Hello from trend-analysis!")
+    print("Hello from ml-orderflow!")
 
 
 if __name__ == "__main__":

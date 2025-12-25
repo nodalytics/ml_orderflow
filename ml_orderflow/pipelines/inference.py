@@ -2,9 +2,9 @@ import os
 import pandas as pd
 import pickle
 import numpy as np
-from trend_analysis.utils.config import settings
-from trend_analysis.utils.initializer import logger_instance
-from trend_analysis.pipelines.preprocess import calculate_features
+from ml_orderflow.utils.config import settings
+from ml_orderflow.utils.initializer import logger_instance
+from ml_orderflow.pipelines.preprocess import calculate_features
 from mlforecast import MLForecast  # for type checking if needed
 
 # Try importing NeuralForecast to check instance types cleanly

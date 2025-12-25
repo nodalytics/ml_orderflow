@@ -1,34 +1,34 @@
 stages:
   ingest:
-    cmd: uv run python -m trend_analysis.pipelines.data_ingestion
+    cmd: uv run python -m ml_orderflow.pipelines.data_ingestion
     deps:
-      - trend_analysis/pipelines/data_ingestion.py
+      - ml_orderflow/pipelines/data_ingestion.py
     outs:
       - data/raw
   preprocess:
-    cmd: uv run python -m trend_analysis.pipelines.preprocess
+    cmd: uv run python -m ml_orderflow.pipelines.preprocess
     deps:
       - data/raw
-      - trend_analysis/pipelines/preprocess.py
+      - ml_orderflow/pipelines/preprocess.py
     params:
       - preprocessing
     outs:
       - data/processed
   train:
-    cmd: uv run python -m trend_analysis.pipelines.train
+    cmd: uv run python -m ml_orderflow.pipelines.train
     deps:
       - data/processed
-      - trend_analysis/pipelines/train.py
+      - ml_orderflow/pipelines/train.py
     params:
       - train
       - mlflow
     outs:
-      - models/trend_analysis_model.pkl
+      - models/ml_orderflow_model.pkl
   inference:
-    cmd: uv run python -m trend_analysis.pipelines.inference
+    cmd: uv run python -m ml_orderflow.pipelines.inference
     deps:
       - data/processed
-      - models/trend_analysis_model.pkl
-      - trend_analysis/pipelines/inference.py
+      - models/ml_orderflow_model.pkl
+      - ml_orderflow/pipelines/inference.py
     outs:
       - data/results/inferences.csv

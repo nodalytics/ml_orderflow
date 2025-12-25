@@ -5,7 +5,7 @@ import os
 # Ensure we can import modules
 sys.path.append(os.getcwd())
 
-from trend_analysis.services.llm_service import LLMService
+from ml_orderflow.services.llm_service import LLMService
 
 def test_llm_service():
     print("Initializing LLMService...")

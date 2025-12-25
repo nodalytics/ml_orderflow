@@ -26,4 +26,4 @@ class LoggerInstance:
     def get_logger(self):
         return self.logger
 
-logger_instance = LoggerInstance("trend-analysis")
+logger_instance = LoggerInstance("ml-orderflow")

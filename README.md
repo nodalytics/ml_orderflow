@@ -62,7 +62,7 @@ Enrich the dataset with features from other contexts (preventing lookahead bias)
 ### 1. Python-based Scheduler (Cross-platform)
 Use the built-in scheduler to run the pipeline at regular intervals defined in `params.yaml`.
 ```bash
-uv run python -m trend_analysis.scheduler
+uv run python -m ml_orderflow.scheduler
 ```
 _Configure `interval_minutes` in the `schedule` section of `params.yaml`._
 
@@ -74,8 +74,8 @@ To ensure the pipeline runs even after system restarts or without a manual termi
 3. **Trigger**: Choose "Daily" or "When I log on". 
 4. **Action**: "Start a Program".
 5. **Program/script**: `uv`.
-6. **Add arguments**: `run dvc repro` (or `run python -m trend_analysis.scheduler`).
-7. **Start in**: `trend-analysis`.
+6. **Add arguments**: `run dvc repro` (or `run python -m ml_orderflow.scheduler`).
+7. **Start in**: `ml-orderflow`.
 
 ## Tech Stack
 - **Data**: MT5, CCXT, Pandas

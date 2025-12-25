@@ -6,9 +6,9 @@ from pydantic import BaseModel
 from typing import List, Optional, Any, Dict
 import uvicorn
 from contextlib import asynccontextmanager
-from trend_analysis.utils.config import settings
-from trend_analysis.utils.initializer import logger_instance
-from trend_analysis.core.analysis import MarketAnalyzer
+from ml_orderflow.utils.config import settings
+from ml_orderflow.utils.initializer import logger_instance
+from ml_orderflow.core.analysis import MarketAnalyzer
 
 logger = logger_instance.get_logger()
 
@@ -98,7 +98,7 @@ async def dynamic_forecast(data: List[Dict[str, Any]]):
         logger.error(f"Dynamic forecast failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-from trend_analysis.services.llm_service import LLMService
+from ml_orderflow.services.llm_service import LLMService
 
 # Global variables
 model = None
