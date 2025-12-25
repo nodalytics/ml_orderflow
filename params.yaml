@@ -1,0 +1,78 @@
+base:
+  project: trend-analysis
+  data_dir: data
+  model_dir: models
+  log_dir: logs
+
+data_ingestion:
+  source: mt5  # options: mt5, mexc
+  raw_data_path: data/raw
+  test_size: 0.2
+  mexc:
+    symbols: ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+    timeframes: ["1h", "4h", "1d", "1w"]
+    limit: 500
+  mt5:
+    symbols: ["BTCUSD", "ETHUSD", "XAUUSD", "GBPUSD"]
+    timeframes: ["H1", "H4", "D1", "W1"]  # mt5 timeframe constants usually needed, will handle string conversion in code
+    n_bars: 1000
+
+preprocessing:
+  processed_data_path: data/processed
+  lrc_period: 100
+  volatility_windows: [7, 24]
+  sma_windows: [20, 50]
+  rsi_window: 14
+  target_window: 1
+  min_bars: 150
+
+  enable_multivariate: false
+
+  # Multivariate Configuration
+  # Defines the SINGLE Target and the Contexts to merge onto it.
+  multivariate_config:
+    target_timeframe: "H1" # The base timeframe for predictions
+    target_symbol: "ETHUSD" # The base symbol for predictions
+
+    # Context Dictionary: Symbol -> List of Timeframes
+    context:
+      BTCUSD: ["H1", "H4"]  # Merge BTC H1 and H4
+      GBPUSD: ["H1"]        # Merge GBP H1
+      ETHUSD: ["H4"]        # Merge ETH H4 (cross-timeframe self-context)
+
+train:
+  model_name: trend_analysis_model
+  model_type: "xgboost"  # options: xgboost, lightgbm, random_forest, nhits, lstm
+  freq: "h"  # pandas frequency string (e.g., 'h', 'min', 'd')
+  lags: [1, 7, 24]
+  target_col: "target_next_return"
+  forecast_horizon: 4  # Number of steps to forecast into the future
+  input_size: 128 # Context window size for DL models
+  use_static_features: true  # REQUIRED if training on multiple symbols (Global Model). Ignored if multivariate mode (Single Target) is enabled.
+
+# Robustness & Validation
+validation:
+  enforce_schema: true
+  required_columns: ["open", "high", "low", "close", "volume"]
+  anomaly_protection:
+    check_zscore: true
+    zscore_threshold: 4.0
+    action: "warn" # options: "warn", "drop"
+
+# LLM Configuration
+llm:
+  provider: "gemini" # options: gemini, openai, dummy
+  model: "gemini-pro"
+  temperature: 0.7
+  max_output_tokens: 1024
+  # api_key should be set via environment variable: GEMINI_API_KEY
+
+mlflow:
+  tracking_uri: sqlite:///mlflow.db
+  experiment_name: trend-analysis
+  model_registry_name: trend-analysis
+
+schedule:
+  interval_minutes: 60
+  misfire_grace_time: 60
+  enabled: true

@@ -1,0 +1,42 @@
+# General
+.DS_Store
+*.swp
+*.bak
+*.tmp
+*.pem
+*.log
+*_logs
+
+# Python
+__pycache__
+*.py[cod]
+*.class
+.pytest_cache/
+.mypy_cache/
+.tox/
+.nox/
+.coverage
+htmlcov/
+.venv/
+venv/
+ENV/
+
+# Project Specific
+logs/
+cache/
+.trash/
+
+# DVC (Data and models are tracked by DVC, not Git)
+/data
+/models
+/mlruns
+mlflow.db
+
+# Environment
+.env
+!.env.example
+
+# IDEs
+.idea/
+.vscode/
+
