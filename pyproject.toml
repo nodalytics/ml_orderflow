@@ -1,5 +1,5 @@
 [project]
-name = "trend-analysis"
+name = "ml-orderflow"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -31,6 +31,7 @@ dependencies = [
     "lightgbm>=4.6.0",
     "neuralforecast==3.1.2",
     "apscheduler>=3.10.4",
+    "google-generativeai>=0.8.6",
 ]
 
 [project.scripts]
@@ -38,5 +39,5 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["trend_analysis*"]
+include = ["ml_orderflow*"]
 exclude = ["models*", "data*", "notebooks*"]
