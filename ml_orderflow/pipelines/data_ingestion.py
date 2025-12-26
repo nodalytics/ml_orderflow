@@ -17,8 +17,27 @@ except ImportError:
 
 from ml_orderflow.utils.config import settings
 from ml_orderflow.utils.initializer import logger_instance
+from ml_orderflow.core.circuit_breaker import CircuitBreaker, CircuitBreakerError
  
 logger = logger_instance.get_logger()
+
+# Initialize circuit breakers for external services
+robustness_config = settings.params.get('robustness', {})
+cb_config = robustness_config.get('circuit_breaker', {})
+
+ccxt_circuit_breaker = CircuitBreaker(
+    failure_threshold=cb_config.get('failure_threshold', 5),
+    timeout_seconds=cb_config.get('timeout_seconds', 60),
+    half_open_max_calls=cb_config.get('half_open_max_calls', 3),
+    name="ccxt_exchange"
+)
+
+mt5_circuit_breaker = CircuitBreaker(
+    failure_threshold=cb_config.get('failure_threshold', 5),
+    timeout_seconds=cb_config.get('timeout_seconds', 60),
+    half_open_max_calls=cb_config.get('half_open_max_calls', 3),
+    name="mt5_terminal"
+)
 
 
 def retry(exceptions: tuple, tries: int = 3, delay: int = 2, backoff: int = 2):
@@ -86,27 +105,34 @@ def connect_mt5() -> bool:
 @retry((ccxt.NetworkError, ccxt.ExchangeError, ccxt.RateLimitExceeded), tries=3, delay=2)
 def get_data_ccxt(exchange_id: str, symbol: str, timeframe: str, limit: int) -> pd.DataFrame:
     """
-    Fetch historical data using CCXT.
+    Fetch historical data using CCXT with circuit breaker protection.
     """
-    try:
-        exchange_class = getattr(ccxt, exchange_id)
-        exchange = exchange_class()
-        ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
-        
-        if not ohlcv:
-            return pd.DataFrame()
+    def _fetch():
+        try:
+            exchange_class = getattr(ccxt, exchange_id)
+            exchange = exchange_class()
+            ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
+            
+            if not ohlcv:
+                return pd.DataFrame()
 
-        df = pd.DataFrame(ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
-        df['time'] = pd.to_datetime(df['time'], unit='ms')
-        df.set_index('time', inplace=True)
-        # Ensure only standardized columns are returned
-        return df[['open', 'high', 'low', 'close', 'volume']]
-    except (ccxt.NetworkError, ccxt.ExchangeError, ccxt.RateLimitExceeded) as e:
-        # Re-raise for retry decorator
-        raise e
-    except Exception as e:
-        logger.error(f"Unexpected error fetching data from CCXT ({exchange_id}): {e}")
-        raise RuntimeError(f"Could not retrieve data from {exchange_id}")
+            df = pd.DataFrame(ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
+            df['time'] = pd.to_datetime(df['time'], unit='ms')
+            df.set_index('time', inplace=True)
+            # Ensure only standardized columns are returned
+            return df[['open', 'high', 'low', 'close', 'volume']]
+        except (ccxt.NetworkError, ccxt.ExchangeError, ccxt.RateLimitExceeded) as e:
+            # Re-raise for retry decorator
+            raise e
+        except Exception as e:
+            logger.error(f"Unexpected error fetching data from CCXT ({exchange_id}): {e}")
+            raise RuntimeError(f"Could not retrieve data from {exchange_id}")
+    
+    try:
+        return ccxt_circuit_breaker.call(_fetch)
+    except CircuitBreakerError as e:
+        logger.error(f"Circuit breaker open for CCXT: {e}")
+        return pd.DataFrame()  # Return empty DataFrame for graceful degradation
 
 
 
@@ -118,7 +144,7 @@ def get_data_mt5(symbol: str, n_bars: int, timeframe, start_pos=None) -> pd.Data
     
     - `symbol`: Trading instrument (e.g., "BTCUSD").
     - `n_bars`: Number of bars to retrieve.
-    - `timeframe`: MT5 timeframe (e.g., mt5.TIMEFRAME_H1).
+    - `timeframe`: MT5 timeframe (e.g., H1).
     - `start_pos`: Offset from the most recent bar (default `None` for live trading).
     
     If `start_pos` is `None`, fetches the latest `n_bars` (useful for live trading).
@@ -190,6 +216,7 @@ def ingest_data():
         os.makedirs(raw_data_path, exist_ok=True)
 
     all_data = []
+    failed_symbols = []  # Track failed symbols for graceful degradation
     try:
         if source == 'mt5':
             if MT5_AVAILABLE:
@@ -214,15 +241,24 @@ def ingest_data():
                             # Verify if it exists in mt5 module
                             if not hasattr(mt5, f"TIMEFRAME_{tf_str}"):
                                 logger.error(f"Invalid MT5 timeframe: {tf_str}")
+                                failed_symbols.append(f"{symbol}_{tf_str}")
                                 continue
                                 
                             timeframe = getattr(mt5, f"TIMEFRAME_{tf_str}")
                             df = get_data_mt5(symbol, n_bars, timeframe)
+                            
+                            if df.empty:
+                                logger.warning(f"No data retrieved for {symbol} ({tf_str})")
+                                failed_symbols.append(f"{symbol}_{tf_str}")
+                                continue
+                            
                             df['symbol'] = symbol
                             df['timeframe'] = tf_str
                             all_data.append(df)
+                            logger.info(f"Successfully fetched {len(df)} bars for {symbol} ({tf_str})")
                         except Exception as e:
                             logger.error(f"Failed to fetch {symbol} ({tf_str}) from MT5: {e}")
+                            failed_symbols.append(f"{symbol}_{tf_str}")
             else:
                 logger.error("MetaTrader 5 module is NOT available. Ingestion failed.")
                 return
@@ -242,14 +278,29 @@ def ingest_data():
                     logger.info(f"Fetching data for {symbol} ({tf_str}) from {source.upper()}...")
                     try:
                         df = get_data_ccxt(source, symbol, tf_str, limit)
+                        
+                        if df.empty:
+                            logger.warning(f"No data retrieved for {symbol} ({tf_str})")
+                            failed_symbols.append(f"{symbol}_{tf_str}")
+                            continue
+                        
                         df['symbol'] = symbol
                         df['timeframe'] = tf_str
                         all_data.append(df)
+                        logger.info(f"Successfully fetched {len(df)} bars for {symbol} ({tf_str})")
                     except Exception as e:
-                        logger.error(f"Failed to fetch {symbol} ({tf_str}) from {source.upper()}: {e}")
+                        logger.error(f"Failed to fetch {symbol} ({tf_str}) from {source.UPPER()}: {e}")
+                        failed_symbols.append(f"{symbol}_{tf_str}")
         else:
             logger.error(f"Unknown data source: {source}")
             return
+
+        # Graceful degradation: Continue with available data even if some symbols failed
+        if failed_symbols:
+            logger.warning(
+                f"Failed to fetch {len(failed_symbols)} symbol/timeframe combinations: {failed_symbols}. "
+                f"Continuing with {len(all_data)} successful fetches."
+            )
 
         # Consolidate, validate, and save
         if all_data:
@@ -262,11 +313,14 @@ def ingest_data():
             if validate_data(master_df, source):
                 output_file = os.path.join(raw_data_path, "dataset.csv")
                 master_df.to_csv(output_file)
-                logger.info(f"Successfully ingested data for {len(all_data)} symbols. Saved to {output_file}")
+                logger.info(
+                    f"Successfully ingested data for {len(all_data)} symbol/timeframe combinations. "
+                    f"Saved to {output_file}"
+                )
             else:
                 logger.error("Consolidated data failed validation. Not saving.")
         else:
-            logger.error("No data fetched for any symbol.")
+            logger.error("No data fetched for any symbol. All fetches failed.")
 
     except Exception as e:
         logger.error(f"Data ingestion failed: {e}")

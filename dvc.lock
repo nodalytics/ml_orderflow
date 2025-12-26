@@ -1,0 +1,115 @@
+schema: '2.0'
+stages:
+  ingest:
+    cmd: uv run python -m ml_orderflow.pipelines.data_ingestion
+    deps:
+    - path: ml_orderflow/pipelines/data_ingestion.py
+      hash: md5
+      md5: bd72f56705aaf8c3f1f86cce36547973
+      size: 14208
+    outs:
+    - path: data/raw
+      hash: md5
+      md5: 61e0b638f32f03b695f445ff5154941a.dir
+      size: 1093888
+      nfiles: 1
+  preprocess:
+    cmd: uv run python -m ml_orderflow.pipelines.preprocess
+    deps:
+    - path: data/raw
+      hash: md5
+      md5: 61e0b638f32f03b695f445ff5154941a.dir
+      size: 1093888
+      nfiles: 1
+    - path: ml_orderflow/pipelines/preprocess.py
+      hash: md5
+      md5: cd059a932d2b4adea419ad12b482236a
+      size: 22015
+    params:
+      params.yaml:
+        preprocessing:
+          processed_data_path: data/processed
+          lrc_period: 100
+          volatility_windows:
+          - 7
+          - 24
+          sma_windows:
+          - 20
+          - 50
+          rsi_window: 14
+          target_window: 1
+          min_bars: 150
+          enable_multivariate: false
+          multivariate_config:
+            target_timeframe: H1
+            target_symbol: ETHUSD
+            context:
+              BTCUSD:
+              - H1
+              - H4
+              GBPUSD:
+              - H1
+              ETHUSD:
+              - H4
+    outs:
+    - path: data/processed
+      hash: md5
+      md5: 78b307bbce176d51afdbbbbee90bdf99.dir
+      size: 6004609
+      nfiles: 1
+  train:
+    cmd: uv run python -m ml_orderflow.pipelines.train
+    deps:
+    - path: data/processed
+      hash: md5
+      md5: 78b307bbce176d51afdbbbbee90bdf99.dir
+      size: 6004609
+      nfiles: 1
+    - path: ml_orderflow/pipelines/train.py
+      hash: md5
+      md5: c3ab73ecfd3683930a9a3b2d38345244
+      size: 7885
+    params:
+      params.yaml:
+        mlflow:
+          tracking_uri: sqlite:///mlflow.db
+          experiment_name: ml-orderflow
+          model_registry_name: ml-orderflow
+        train:
+          model_name: ml_orderflow_model
+          model_type: xgboost
+          freq: h
+          lags:
+          - 1
+          - 7
+          - 24
+          target_col: target_next_return
+          forecast_horizon: 4
+          input_size: 128
+          use_static_features: true
+    outs:
+    - path: models/ml_orderflow_model.pkl
+      hash: md5
+      md5: 000af352fb64dfe58f223bddabd2c097
+      size: 401280
+  inference:
+    cmd: uv run python -m ml_orderflow.pipelines.inference
+    deps:
+    - path: data/processed
+      hash: md5
+      md5: 78b307bbce176d51afdbbbbee90bdf99.dir
+      size: 6004609
+      nfiles: 1
+    - path: ml_orderflow/pipelines/inference.py
+      hash: md5
+      md5: 6d78a4ffb26db8d7b80b4e72a469c10e
+      size: 5590
+    - path: models/ml_orderflow_model.pkl
+      hash: md5
+      md5: 000af352fb64dfe58f223bddabd2c097
+      size: 401280
+    outs:
+    - path: data/results/inferences.csv
+      hash: md5
+      md5: 80a1e2f93202492fc78597048d7568d7
+      size: 2897

@@ -218,7 +218,7 @@ def preprocess_data():
             logger.error(f"Dataset is missing required columns: {missing}")
             return
 
-        df['time'] = pd.to_datetime(df['time'])
+        df['time'] = pd.to_datetime(df['time'], format='mixed')
         df.set_index('time', inplace=True)
     except Exception as e:
         logger.error(f"Failed to load dataset: {e}")

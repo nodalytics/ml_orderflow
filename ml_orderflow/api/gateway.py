@@ -2,6 +2,7 @@ import os
 import mlflow
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional, Any, Dict
 import uvicorn
@@ -9,12 +10,14 @@ from contextlib import asynccontextmanager
 from ml_orderflow.utils.config import settings
 from ml_orderflow.utils.initializer import logger_instance
 from ml_orderflow.core.analysis import MarketAnalyzer
+from ml_orderflow.services.llm_service import LLMService
 
 logger = logger_instance.get_logger()
 
 # Global variables
 model = None
 analyzer = MarketAnalyzer()
+llm_service = LLMService()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -98,17 +101,9 @@ async def dynamic_forecast(data: List[Dict[str, Any]]):
         logger.error(f"Dynamic forecast failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-from ml_orderflow.services.llm_service import LLMService
-
-# Global variables
-model = None
-analyzer = MarketAnalyzer()
-llm_service = LLMService()
-
-# ... (Previous code remains) ...
-
 class SummaryRequest(BaseModel):
     symbol: Optional[str] = None
+    use_cache: Optional[bool] = True
     
 @app.post("/predict/summary")
 async def generate_prediction_summary(request: SummaryRequest):
@@ -135,13 +130,60 @@ async def generate_prediction_summary(request: SummaryRequest):
         logger.error(f"Summary generation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/predict/summary/stream")
+async def generate_prediction_summary_stream(request: SummaryRequest):
+    """
+    Generates a streaming natural language summary of the latest market predictions using an LLM.
+    Returns chunks of text as they're generated for real-time display.
+    """
+    inference_file = os.path.join(settings.params['base']['data_dir'], "results", "inferences.csv")
+    if not os.path.exists(inference_file):
+        raise HTTPException(status_code=404, detail="Inference results not found. Run pipeline first.")
+    
+    try:
+        inferences_df = pd.read_csv(inference_file)
+        inferences_data = inferences_df.to_dict(orient='records')
+        
+        def generate():
+            for chunk in llm_service.generate_market_summary_stream(inferences_data, request.symbol):
+                yield chunk
+        
+        return StreamingResponse(generate(), media_type="text/plain")
+    except Exception as e:
+        logger.error(f"Streaming summary generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/llm/cache/clear")
+async def clear_llm_cache():
+    """
+    Clears the LLM response cache.
+    """
+    try:
+        llm_service.clear_cache()
+        return {"status": "success", "message": "LLM cache cleared"}
+    except Exception as e:
+        logger.error(f"Failed to clear cache: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/llm/cache/stats")
+async def get_cache_stats():
+    """
+    Returns LLM cache statistics.
+    """
+    return llm_service.get_cache_stats()
+
 @app.get("/health")
 def health():
+    """
+    Comprehensive health check endpoint.
+    """
+    llm_health = llm_service.health_check()
+    
     return {
         "status": "ok", 
         "model_loaded": model is not None,
         "mode": "Time Series Forecasting",
-        "llm_provider": type(llm_service.provider).__name__
+        "llm": llm_health
     }
 
 if __name__ == "__main__":

@@ -14,7 +14,13 @@ A professional machine learning pipeline for extracting trend insights and forec
    ```bash
    uv sync
    ```
-2. **Configuration**: Edit `params.yaml` to configure data sources, features, and training parameters.
+2. **Configuration**: Set environment variables and Edit `params.yaml` to configure data sources, features, and training parameters.
+  ```bash
+    # For Gemini
+    export GEMINI_API_KEY="your-key-here"
+    # For OpenAI
+    export OPENAI_API_KEY="your-key-here"
+  ```
 3. **Run Pipeline**:
    ```bash
    uv run dvc repro
