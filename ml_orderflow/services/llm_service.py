@@ -142,6 +142,9 @@ class LLMService:
         if self.include_market_regime and not df.empty:
             market_regime = self._detect_market_regime(df)
         
+        # Detect anomalies
+        anomaly_alerts = self._detect_anomalies(df)
+        
         # Prepare data string (limit to essential columns to save tokens)
         essential_cols = ['unique_id', 'ds', 'y_pred'] if 'y_pred' in df.columns else list(df.columns)[:5]
         data_subset = df[essential_cols].to_dict(orient='records') if not df.empty else data
@@ -152,6 +155,8 @@ class LLMService:
 Analyze the following model predictions for {target}.
 
 {market_regime}
+
+{anomaly_alerts}
 
 {technical_summary}
 
@@ -164,9 +169,10 @@ Please provide a concise, professional market summary (max 200 words) that inclu
 
 1. **Overall Trend Direction**: Clearly state if the outlook is Bullish, Bearish, or Neutral
 2. **Key Observations**: Highlight the most significant patterns or changes in the predictions
-3. **Technical Context**: Reference any notable technical indicators if provided
-4. **Risk Assessment**: Briefly assess the confidence level and potential risks
-5. **Actionable Insight**: Provide one clear takeaway for traders/investors
+3. **Anomaly Assessment**: If anomalies are detected, explain their potential impact
+4. **Technical Context**: Reference any notable technical indicators if provided
+5. **Risk Assessment**: Briefly assess the confidence level and potential risks
+6. **Actionable Insight**: Provide one clear takeaway for traders/investors
 
 Format your response in clear paragraphs. Be direct and avoid unnecessary hedging.
 
@@ -242,6 +248,89 @@ Summary:
             regime += " with High Uncertainty"
         
         return regime
+    
+    def _detect_anomalies(self, df: pd.DataFrame) -> str:
+        """Detect anomalies in the data using z-scores"""
+        if df.empty:
+            return ""
+        
+        anomalies = []
+        
+        # Check for price spike anomalies in predictions
+        if 'y_pred' in df.columns and not df['y_pred'].isna().all():
+            predictions = df['y_pred'].dropna()
+            if len(predictions) >= 3:
+                mean = predictions.mean()
+                std = predictions.std()
+                
+                if std > 0:
+                    z_scores = (predictions - mean) / std
+                    
+                    # Detect extreme predictions (z-score > 3)
+                    extreme_indices = z_scores.abs() > 3
+                    if extreme_indices.any():
+                        extreme_values = predictions[extreme_indices]
+                        direction = "upward" if extreme_values.iloc[0] > 0 else "downward"
+                        anomalies.append(
+                            f"⚠️ **Price Spike Alert**: Detected extreme {direction} prediction "
+                            f"(z-score > 3.0, value: {extreme_values.iloc[0]:.4f})"
+                        )
+        
+        # Check for volume anomalies if available
+        if 'volume' in df.columns and not df['volume'].isna().all():
+            volumes = df['volume'].dropna()
+            if len(volumes) >= 3:
+                mean_vol = volumes.mean()
+                std_vol = volumes.std()
+                
+                if std_vol > 0:
+                    latest_vol = volumes.iloc[-1]
+                    z_score = (latest_vol - mean_vol) / std_vol
+                    
+                    if z_score > 3:
+                        anomalies.append(
+                            f"⚠️ **Volume Spike**: Unusually high volume detected "
+                            f"(z-score: {z_score:.2f}, {(z_score * 100):.0f}% above average)"
+                        )
+                    elif z_score < -3:
+                        anomalies.append(
+                            f"⚠️ **Volume Drop**: Unusually low volume detected "
+                            f"(z-score: {z_score:.2f})"
+                        )
+        
+        # Check for volatility anomalies
+        vol_cols = [col for col in df.columns if 'volatility' in col.lower()]
+        if vol_cols:
+            volatilities = df[vol_cols[0]].dropna()
+            if len(volatilities) >= 3:
+                mean_volatility = volatilities.mean()
+                std_volatility = volatilities.std()
+                
+                if std_volatility > 0:
+                    latest_volatility = volatilities.iloc[-1]
+                    z_score = (latest_volatility - mean_volatility) / std_volatility
+                    
+                    if z_score > 2.5:
+                        anomalies.append(
+                            f"⚠️ **High Volatility Alert**: Market volatility is significantly elevated "
+                            f"(z-score: {z_score:.2f})"
+                        )
+        
+        # Check for sudden trend reversals
+        if 'y_pred' in df.columns and len(df) >= 3:
+            recent_preds = df['y_pred'].dropna().tail(3)
+            if len(recent_preds) >= 3:
+                # Check if signs changed dramatically
+                signs = (recent_preds > 0).astype(int)
+                if signs.iloc[0] != signs.iloc[-1] and abs(recent_preds.iloc[-1]) > abs(recent_preds.iloc[0]) * 2:
+                    direction = "bullish to bearish" if signs.iloc[0] > signs.iloc[-1] else "bearish to bullish"
+                    anomalies.append(
+                        f"⚠️ **Trend Reversal**: Sharp reversal detected ({direction})"
+                    )
+        
+        if anomalies:
+            return "**⚠️ ANOMALY ALERTS:**\n" + "\n".join(f"- {a}" for a in anomalies) + "\n"
+        return ""
     
     def clear_cache(self):
         """Clear the LLM response cache"""

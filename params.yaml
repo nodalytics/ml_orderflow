@@ -76,6 +76,8 @@ llm:
   # Advanced prompting
   use_technical_context: true
   include_market_regime: true
+  detect_anomalies: true  # Enable anomaly detection (price spikes, volume anomalies)
+  anomaly_z_threshold: 3.0  # Z-score threshold for anomaly detection
 
 # Robustness Configuration
 robustness:

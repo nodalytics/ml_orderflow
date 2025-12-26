@@ -9,8 +9,9 @@ import uvicorn
 from contextlib import asynccontextmanager
 from ml_orderflow.utils.config import settings
 from ml_orderflow.utils.initializer import logger_instance
-from ml_orderflow.core.analysis import MarketAnalyzer
+from ml_orderflow.services.market_analyzer import MarketAnalyzer
 from ml_orderflow.services.llm_service import LLMService
+from ml_orderflow.services.anomaly_detector import AnomalyDetector
 
 logger = logger_instance.get_logger()
 
@@ -18,6 +19,7 @@ logger = logger_instance.get_logger()
 model = None
 analyzer = MarketAnalyzer()
 llm_service = LLMService()
+anomaly_detector = AnomalyDetector(z_threshold=3.0)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -171,6 +173,147 @@ async def get_cache_stats():
     Returns LLM cache statistics.
     """
     return llm_service.get_cache_stats()
+
+@app.get("/anomalies/detect")
+async def detect_anomalies(symbol: Optional[str] = None):
+    """
+    Standalone anomaly detection endpoint (no LLM).
+    Returns structured anomaly data for automated systems.
+    """
+    inference_file = os.path.join(settings.params['base']['data_dir'], "results", "inferences.csv")
+    if not os.path.exists(inference_file):
+        raise HTTPException(status_code=404, detail="Inference results not found. Run pipeline first.")
+    
+    try:
+        inferences_df = pd.read_csv(inference_file)
+        
+        # Filter by symbol if requested
+        if symbol:
+            inferences_df = inferences_df[
+                inferences_df['unique_id'].str.startswith(symbol) if 'unique_id' in inferences_df.columns
+                else inferences_df.get('symbol', pd.Series()) == symbol
+            ]
+            
+            if inferences_df.empty:
+                return {
+                    "symbol": symbol,
+                    "anomalies": [],
+                    "summary": {"total_anomalies": 0}
+                }
+        
+        # Detect anomalies
+        anomalies = anomaly_detector.detect_all(inferences_df)
+        summary = anomaly_detector.get_summary_stats(anomalies)
+        
+        return {
+            "symbol": symbol or "all",
+            "anomalies": anomalies,
+            "summary": summary
+        }
+    except Exception as e:
+        logger.error(f"Anomaly detection failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/anomalies/detect/stream")
+async def detect_anomalies_stream(request: SummaryRequest):
+    """
+    Streaming anomaly detection endpoint.
+    Sends anomalies as they're detected in Server-Sent Events format.
+    """
+    inference_file = os.path.join(settings.params['base']['data_dir'], "results", "inferences.csv")
+    if not os.path.exists(inference_file):
+        raise HTTPException(status_code=404, detail="Inference results not found. Run pipeline first.")
+    
+    try:
+        inferences_df = pd.read_csv(inference_file)
+        
+        # Filter by symbol if requested
+        if request.symbol:
+            inferences_df = inferences_df[
+                inferences_df['unique_id'].str.startswith(request.symbol) if 'unique_id' in inferences_df.columns
+                else inferences_df.get('symbol', pd.Series()) == request.symbol
+            ]
+        
+        def generate():
+            import json
+            
+            # Detect anomalies
+            anomalies = anomaly_detector.detect_all(inferences_df)
+            
+            if not anomalies:
+                yield json.dumps({"message": "No anomalies detected", "count": 0}) + "\n"
+                return
+            
+            # Send summary first
+            summary = anomaly_detector.get_summary_stats(anomalies)
+            yield json.dumps({"type": "summary", "data": summary}) + "\n"
+            
+            # Stream each anomaly
+            for anomaly in anomalies:
+                yield json.dumps({"type": "anomaly", "data": anomaly}) + "\n"
+        
+        return StreamingResponse(generate(), media_type="application/x-ndjson")
+    except Exception as e:
+        logger.error(f"Streaming anomaly detection failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/anomalies/explain")
+async def explain_anomalies_with_llm(request: SummaryRequest):
+    """
+    LLM-enhanced anomaly explanation endpoint.
+    Combines structured anomaly detection with natural language explanation.
+    """
+    inference_file = os.path.join(settings.params['base']['data_dir'], "results", "inferences.csv")
+    if not os.path.exists(inference_file):
+        raise HTTPException(status_code=404, detail="Inference results not found. Run pipeline first.")
+    
+    try:
+        inferences_df = pd.read_csv(inference_file)
+        
+        # Filter by symbol if requested
+        if request.symbol:
+            inferences_df = inferences_df[
+                inferences_df['unique_id'].str.startswith(request.symbol) if 'unique_id' in inferences_df.columns
+                else inferences_df.get('symbol', pd.Series()) == request.symbol
+            ]
+        
+        # Detect anomalies
+        anomalies = anomaly_detector.detect_all(inferences_df)
+        summary = anomaly_detector.get_summary_stats(anomalies)
+        
+        # Get LLM explanation if anomalies found
+        llm_explanation = None
+        if anomalies:
+            # Create focused prompt for anomaly explanation
+            import json
+            anomaly_data = json.dumps(anomalies[:5], indent=2)  # Limit to top 5
+            
+            prompt = f"""You are a financial risk analyst. Analyze these detected market anomalies:
+
+{anomaly_data}
+
+Provide a concise explanation (max 150 words) covering:
+1. The most critical anomaly and its implications
+2. Potential causes
+3. Recommended actions for traders
+
+Be direct and actionable."""
+            
+            try:
+                llm_explanation = llm_service.provider.generate_content(prompt)
+            except Exception as e:
+                logger.warning(f"LLM explanation failed: {e}")
+                llm_explanation = "LLM explanation unavailable"
+        
+        return {
+            "symbol": request.symbol or "all",
+            "anomalies": anomalies,
+            "summary": summary,
+            "llm_explanation": llm_explanation
+        }
+    except Exception as e:
+        logger.error(f"Anomaly explanation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
 def health():
