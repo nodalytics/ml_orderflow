@@ -23,12 +23,12 @@ stages:
       - train
       - mlflow
     outs:
-      - models/ml_orderflow_model.pkl
+      - models/ml_orderflow.pkl
   inference:
     cmd: uv run python -m ml_orderflow.pipelines.inference
     deps:
       - data/processed
-      - models/ml_orderflow_model.pkl
+      - models/ml_orderflow.pkl
       - ml_orderflow/pipelines/inference.py
     outs:
       - data/results/inferences.csv

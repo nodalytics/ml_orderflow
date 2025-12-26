@@ -24,26 +24,41 @@ def run_inference():
     processed_data_file = os.path.join(prep_params['processed_data_path'], "processed_dataset.csv")
     model_name = train_params['model_name']
     
-    # We load the raw model pickle
-    model_file = os.path.join(settings.params['base']['model_dir'], f"{model_name}.pkl")
+    model_path = os.path.join(settings.params['base']['model_dir'], f"{model_name}.pkl")
     
     logger.info(f"Starting automated inference using model: {model_name}")
     
-    if not os.path.exists(model_file):
-        logger.error(f"Model file not found at {model_file}. Please run training first.")
+    if not os.path.exists(model_path):
+        logger.error(f"Model file not found at {model_path}. Please run training first.")
         return
         
     if not os.path.exists(processed_data_file):
-        logger.error(f"Processed data not found at {processed_data_file}.")
+        logger.error(f"Processed data not found at {processed_data_file}")
         return
-
+    
+    # Load target column from metadata (auto-detection)
+    metadata_file = os.path.join(prep_params['processed_data_path'], "preprocessing_metadata.json")
+    target_col = None
+    
+    if os.path.exists(metadata_file):
+        import json
+        with open(metadata_file, 'r') as f:
+            metadata = json.load(f)
+            target_col = metadata.get('target_column')
+            logger.info(f"Auto-detected target column from metadata: '{target_col}'")
+    
+    # Fallback to params.yaml if metadata not found
+    if not target_col:
+        target_col = train_params.get('target_col', 'next_return')
+        logger.warning(f"Metadata not found. Using fallback target column: '{target_col}'")
+    
     # Load Model Object
-    with open(model_file, 'rb') as f:
+    with open(model_path, 'rb') as f:
         fcst = pickle.load(f)
-        
+    
+    # Load processed data
     df = pd.read_csv(processed_data_file)
-    df['time'] = pd.to_datetime(df['time'])
-    target_col = train_params['target_col']
+    df['time'] = pd.to_datetime(df['time'], format='mixed')  # Handle mixed datetime formats
     horizon = train_params.get('forecast_horizon', 24)
     
     # Prepare base DataFrame

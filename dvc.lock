@@ -23,13 +23,19 @@ stages:
       nfiles: 1
     - path: ml_orderflow/pipelines/preprocess.py
       hash: md5
-      md5: cd059a932d2b4adea419ad12b482236a
-      size: 22015
+      md5: a9e511866d79ed2890af30d3f1f91509
+      size: 21475
     params:
       params.yaml:
         preprocessing:
           processed_data_path: data/processed
           lrc_period: 100
+          lsp_window: 100
+          lsp_bins: 20
+          enable_candlestick_patterns: false
+          target_column: next_return
+          target_source: returns
+          target_window: 4
           volatility_windows:
           - 7
           - 24
@@ -37,7 +43,6 @@ stages:
           - 20
           - 50
           rsi_window: 14
-          target_window: 1
           min_bars: 150
           enable_multivariate: false
           multivariate_config:
@@ -54,44 +59,45 @@ stages:
     outs:
     - path: data/processed
       hash: md5
-      md5: 78b307bbce176d51afdbbbbee90bdf99.dir
-      size: 6004609
-      nfiles: 1
+      md5: d3264a9993b64cb2eb9080a2799f8fe6.dir
+      size: 7372001
+      nfiles: 2
   train:
     cmd: uv run python -m ml_orderflow.pipelines.train
     deps:
     - path: data/processed
       hash: md5
-      md5: 78b307bbce176d51afdbbbbee90bdf99.dir
-      size: 6004609
-      nfiles: 1
+      md5: 8ea8a34868e30e6a5033c6e1eaaa1830.dir
+      size: 7403608
+      nfiles: 2
     - path: ml_orderflow/pipelines/train.py
       hash: md5
-      md5: c3ab73ecfd3683930a9a3b2d38345244
-      size: 7885
+      md5: eb3076233d9787c53f60b028cf6f1784
+      size: 8635
     params:
       params.yaml:
         mlflow:
           tracking_uri: sqlite:///mlflow.db
-          experiment_name: ml-orderflow
-          model_registry_name: ml-orderflow
+          experiment_name: ml_orderflow
+          model_registry_name: ml_orderflow
         train:
-          model_name: ml_orderflow_model
+          model_name: ml_orderflow
           model_type: xgboost
-          freq: h
           lags:
           - 1
+          - 2
+          - 3
           - 7
-          - 24
-          target_col: target_next_return
-          forecast_horizon: 4
+          - 14
+          - 21
+          forecast_horizon: 1
           input_size: 128
-          use_static_features: true
+          use_static_features: false
     outs:
-    - path: models/ml_orderflow_model.pkl
+    - path: models/ml_orderflow.pkl
       hash: md5
-      md5: 000af352fb64dfe58f223bddabd2c097
-      size: 401280
+      md5: 0668ccf0f2be20a81618bcf3df667408
+      size: 403332
   inference:
     cmd: uv run python -m ml_orderflow.pipelines.inference
     deps:

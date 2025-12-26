@@ -1,5 +1,5 @@
 base:
-  project: ml-orderflow
+  project: ml_orderflow
   data_dir: data
   model_dir: models
   log_dir: logs
@@ -20,10 +20,26 @@ data_ingestion:
 preprocessing:
   processed_data_path: data/processed
   lrc_period: 100
+  
+  # Liquidity Sentiment Profile
+  lsp_window: 100
+  lsp_bins: 20
+  
+  # Candlestick Patterns (requires pandas-ta-classic)
+  enable_candlestick_patterns: false  # Set to true to enable (adds many columns)
+  
+  # Target Configuration
+  target_column: "next_return"  # Name of the target column to create
+  target_source: "returns"  # Source column to shift (options: returns, close, volume, log_returns, etc.)
+  target_window: 4  # How many periods ahead to predict
+  
+  # Examples:
+  # - Predict next return: target_source="returns", target_window=1
+  # - Predict next close price: target_source="close", target_window=1
+  # - Predict volume 3 steps ahead: target_source="volume", target_window=3
   volatility_windows: [7, 24]
   sma_windows: [20, 50]
   rsi_window: 14
-  target_window: 1
   min_bars: 150
 
   enable_multivariate: false
@@ -41,14 +57,12 @@ preprocessing:
       ETHUSD: ["H4"]        # Merge ETH H4 (cross-timeframe self-context)
 
 train:
-  model_name: ml_orderflow_model
-  model_type: "xgboost"  # options: xgboost, lightgbm, random_forest, nhits, lstm
-  freq: "h"  # pandas frequency string (e.g., 'h', 'min', 'd')
-  lags: [1, 7, 24]
-  target_col: "target_next_return"
-  forecast_horizon: 4  # Number of steps to forecast into the future
+  model_name: "ml_orderflow"
+  model_type: "xgboost"  # Options: xgboost, lightgbm, randomforest, nhits, lstm
+  lags: [1, 2, 3, 7, 14, 21]
+  forecast_horizon: 1  # N-step ahead forecasting
   input_size: 128 # Context window size for DL models
-  use_static_features: true  # REQUIRED if training on multiple symbols (Global Model). Ignored if multivariate mode (Single Target) is enabled.
+  use_static_features: false  # Whether to use static features (symbol, timeframe, etc.)
 
 # Robustness & Validation
 validation:
@@ -99,8 +113,8 @@ robustness:
 
 mlflow:
   tracking_uri: sqlite:///mlflow.db
-  experiment_name: ml-orderflow
-  model_registry_name: ml-orderflow
+  experiment_name: ml_orderflow
+  model_registry_name: ml_orderflow
 
 schedule:
   interval_minutes: 60

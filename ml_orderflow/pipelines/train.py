@@ -18,6 +18,7 @@ def train_model():
     train_params = settings.params['train']
     
     processed_data_file = os.path.join(prep_params['processed_data_path'], "processed_dataset.csv")
+    metadata_file = os.path.join(prep_params['processed_data_path'], "preprocessing_metadata.json")
     model_name = train_params['model_name']
     
     logger.info(f"Starting time series training for model: {model_name}")
@@ -25,10 +26,24 @@ def train_model():
     if not os.path.exists(processed_data_file):
         logger.error(f"Processed data not found at {processed_data_file}. Please run preprocessing first.")
         return
+    
+    # Load target column from metadata (auto-detection)
+    target_col = None
+    if os.path.exists(metadata_file):
+        import json
+        with open(metadata_file, 'r') as f:
+            metadata = json.load(f)
+            target_col = metadata.get('target_column')
+            logger.info(f"Auto-detected target column from metadata: '{target_col}'")
+    
+    # Fallback to params.yaml if metadata not found
+    if not target_col:
+        target_col = train_params.get('target_col', 'target_next_return')
+        logger.warning(f"Metadata not found. Using target column from params.yaml: '{target_col}'")
 
     # Load and format data for mlforecast
     df = pd.read_csv(processed_data_file)
-    df['time'] = pd.to_datetime(df['time'])
+    df['time'] = pd.to_datetime(df['time'], format='mixed')  # Handle mixed datetime formats
     
     # Create composite unique_id
     if 'timeframe' in df.columns:
@@ -39,7 +54,7 @@ def train_model():
     # mlforecast requires specific column names: unique_id, ds, y
     mlf_df = df.rename(columns={
         'time': 'ds',
-        train_params['target_col']: 'y'
+        target_col: 'y'  # Use auto-detected target column
     })
     
     # Drop certain columns but keep static ones if requested

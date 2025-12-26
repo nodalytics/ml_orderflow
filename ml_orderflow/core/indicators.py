@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pandas_ta_classic as ta
 from typing import Literal
 
 def linear_regression_channel(
@@ -128,3 +129,107 @@ def linear_regression_channel(
     df["reg_trend"] = trends
 
     return df
+
+def liquidity_sentiment_profile(
+    df: pd.DataFrame,
+    window: int = 100,
+    num_bins: int = 20,
+    high_value_area_pct: float = 0.70,
+    low_value_area_pct: float = 0.10,
+) -> pd.DataFrame:
+    """
+    Compute liquidity sentiment profile identifying high-traded and low-traded nodes.
+
+    Adds columns to df for:
+      - lsp_poc_price: price of highest-volume bin (Point of Control)
+      - lsp_high_value_low/high: bounds of high traded node area
+      - lsp_low_value_low/high: bounds of low traded node area
+      - lsp_bin_width: bin width (price)
+    
+    Parameters
+    ----------
+    df : DataFrame with ['high','low','close','volume']
+    window : int, rolling lookback window
+    num_bins : int, number of price bins
+    high_value_area_pct : float, e.g. 0.70 = 70% of volume concentrated in high nodes
+    low_value_area_pct : float, e.g. 0.10 = 10% of volume concentrated in low nodes
+    
+    Returns
+    -------
+    df : DataFrame with new columns for liquidity zones.
+    """
+    df["lsp_poc_price"] = np.nan
+    df["lsp_high_value_low"] = np.nan
+    df["lsp_high_value_high"] = np.nan
+    df["lsp_low_value_low"] = np.nan
+    df["lsp_low_value_high"] = np.nan
+    df["lsp_bin_width"] = np.nan
+
+    for idx in range(window - 1, len(df)):
+        sub = df.iloc[idx - window + 1 : idx + 1]
+
+        lo = float(sub["low"].min())
+        hi = float(sub["high"].max())
+        if hi <= lo:
+            continue
+
+        bin_edges = np.linspace(lo, hi, num_bins + 1)
+        prices = sub["close"].values
+        vols = sub["volume"].values 
+
+        bin_idx = np.digitize(prices, bin_edges) - 1
+        vol_by_bin = np.zeros(num_bins)
+        for b, v in zip(bin_idx, vols):
+            if 0 <= b < num_bins:
+                vol_by_bin[b] += v
+
+        total_vol = vol_by_bin.sum()
+        if total_vol <= 0:
+            continue
+
+        # Point of Control (max volume bin)
+        poc_bin = int(np.argmax(vol_by_bin))
+        poc_price = (bin_edges[poc_bin] + bin_edges[poc_bin + 1]) / 2.0
+
+        # ---- High Traded Nodes (HTN) ----
+        sorted_bins_high = sorted(enumerate(vol_by_bin), key=lambda x: x[1], reverse=True)
+        cum, value_bins_high = 0.0, []
+        target_high = total_vol * high_value_area_pct
+        for b, v in sorted_bins_high:
+            value_bins_high.append((b, v))
+            cum += v
+            if cum >= target_high:
+                break
+
+        h_bins = [b for b, _ in value_bins_high]
+        h_low, h_high = min(h_bins), max(h_bins)
+        high_value_low = bin_edges[h_low]
+        high_value_high = bin_edges[h_high + 1]
+
+        # ---- Low Traded Nodes (LTN) ----
+        sorted_bins_low = sorted(enumerate(vol_by_bin), key=lambda x: x[1])  # ascending
+        cum, value_bins_low = 0.0, []
+        target_low = total_vol * low_value_area_pct
+        for b, v in sorted_bins_low:
+            value_bins_low.append((b, v))
+            cum += v
+            if cum >= target_low:
+                break
+
+        l_bins = [b for b, _ in value_bins_low]
+        l_low, l_high = min(l_bins), max(l_bins)
+        low_value_low = bin_edges[l_low]
+        low_value_high = bin_edges[l_high + 1]
+
+        # assign to df
+        df.at[df.index[idx], "lsp_poc_price"] = poc_price
+        df.at[df.index[idx], "lsp_high_value_low"] = high_value_low
+        df.at[df.index[idx], "lsp_high_value_high"] = high_value_high
+        df.at[df.index[idx], "lsp_low_value_low"] = low_value_low
+        df.at[df.index[idx], "lsp_low_value_high"] = low_value_high
+        df.at[df.index[idx], "lsp_bin_width"] = (hi - lo) / num_bins
+
+    return df
+
+def cdl_patterns(df: pd.DataFrame):
+    return df.ta.cdl_pattern(name="all")

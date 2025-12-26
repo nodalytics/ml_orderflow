@@ -2,7 +2,11 @@ import os
 import pandas as pd
 import numpy as np
 from typing import Literal
-from ml_orderflow.core.indicators import linear_regression_channel
+from ml_orderflow.core.indicators import (
+    linear_regression_channel,
+    liquidity_sentiment_profile,
+    cdl_patterns
+)
 from ml_orderflow.utils.config import settings
 from ml_orderflow.utils.initializer import logger_instance
 
@@ -57,13 +61,53 @@ def calculate_features(df: pd.DataFrame, params: dict) -> pd.DataFrame:
     except Exception as e:
         logger.warning(f"LRC calculation failed for a segment: {e}")
     
+    # Liquidity Sentiment Profile (NEW)
+    try:
+        lsp_window = params.get('lsp_window', 100)
+        lsp_bins = params.get('lsp_bins', 20)
+        df = liquidity_sentiment_profile(
+            df, 
+            window=lsp_window, 
+            num_bins=lsp_bins,
+            high_value_area_pct=0.75,
+            low_value_area_pct=0.25
+        )
+        logger.info(f"Liquidity sentiment profile calculated (window={lsp_window}, bins={lsp_bins})")
+    except Exception as e:
+        logger.warning(f"Liquidity sentiment profile calculation failed: {e}")
+    
+    # Candlestick Patterns (NEW)
+    try:
+        if params.get('enable_candlestick_patterns', False):
+            pattern_df = cdl_patterns(df)
+            if pattern_df is not None and not pattern_df.empty:
+                # Merge pattern columns
+                df = pd.concat([df, pattern_df], axis=1)
+                logger.info(f"Candlestick patterns calculated ({len(pattern_df.columns)} patterns)")
+    except Exception as e:
+        logger.warning(f"Candlestick pattern calculation failed: {e}")
+    
     # Time
     df['hour'] = df.index.hour
     df['day_of_week'] = df.index.dayofweek
     
-    # Target (next return)
+    # Target (configurable source column) - Auto-detected target column
     target_window = params.get('target_window', 1)
-    df['target_next_return'] = df['returns'].shift(-target_window)
+    target_col = params.get('target_column', 'next_return')
+    target_source = params.get('target_source', 'returns')  # NEW: configurable source
+    
+    # Validate source column exists
+    if target_source not in df.columns:
+        logger.error(f"Target source column '{target_source}' not found in dataframe. Available columns: {df.columns.tolist()}")
+        raise ValueError(f"Target source column '{target_source}' does not exist")
+    
+    # Generate target by shifting the source column
+    df[target_col] = df[target_source].shift(-target_window)
+    logger.info(f"Created target column '{target_col}' from '{target_source}' with window={target_window}")
+    
+    # Store target column metadata for training stage
+    df.attrs['target_column'] = target_col
+    df.attrs['target_source'] = target_source
     
     return df
 
@@ -358,20 +402,52 @@ def preprocess_data():
         # critical_cols = ['returns', 'rsi_14', 'reg_slope'] 
         # For multivariate, we might have NaNs at the start of H1 that don't match any H4 yet
         # Just use dropna generic or keep it strict
-        processed_df.dropna(inplace=True) # Being strict to ensure quality data
+        # processed_df.dropna(inplace=True) # Being strict to ensure quality data
         
-        logger.info(f"Dropped {before_drop - len(processed_df)} rows containing NaNs/Infs.")
+        # logger.info(f"Dropped {before_drop - len(processed_df)} rows containing NaNs/Infs.")
 
-        if not processed_df.empty:
-            processed_df.to_csv(output_file)
-            logger.info(f"Successfully saved {len(processed_df)} processed samples to {output_file}")
-        else:
-            logger.error("All rows dropped during validation. Nothing to save.")
+        # if not processed_df.empty:
+        #     processed_df.to_csv(output_file)
+        #     logger.info(f"Successfully saved {len(processed_df)} processed samples to {output_file}")
+        # else:
+        #     logger.error("All rows dropped during validation. Nothing to save.")
+
+        final_df = processed_df.copy() # Rename for clarity and consistency with new code
+
+        # Drop rows with NaN in target column (cannot train on these)
+        target_col = settings.params['preprocessing'].get('target_column', 'target_next_return')
+        if target_col in final_df.columns:
+            before_drop = len(final_df)
+            final_df.dropna(subset=[target_col], inplace=True)
+            after_drop = len(final_df)
+            if before_drop > after_drop:
+                logger.info(f"Dropped {before_drop - after_drop} rows with NaN in target column '{target_col}'")
+        
+        # Save target column metadata for training stage
+        metadata = {
+            'target_column': target_col,
+            'target_source': settings.params['preprocessing'].get('target_source', 'returns'),
+            'target_window': settings.params['preprocessing'].get('target_window', 1),
+            'feature_columns': [col for col in final_df.columns if col not in [target_col, 'symbol', 'timeframe']],
+            'timestamp': pd.Timestamp.now().isoformat()
+        }
+        
+        metadata_file = os.path.join(processed_data_path, "preprocessing_metadata.json")
+        import json
+        with open(metadata_file, 'w') as f:
+            json.dump(metadata, f, indent=2)
+        logger.info(f"Saved preprocessing metadata to {metadata_file}")
+        
+        # Save final processed dataset
+        final_df.to_csv(output_file)
+        logger.info(f"Preprocessing complete. Saved {len(final_df)} rows to {output_file}")
+        logger.info(f"Target column: '{target_col}', Feature count: {len(metadata['feature_columns'])}")
         
     except Exception as e:
-        logger.error(f"Feature extraction failed: {e}")
+        logger.error(f"Preprocessing failed: {e}")
         import traceback
         logger.error(traceback.format_exc())
 
 if __name__ == "__main__":
     preprocess_data()
+

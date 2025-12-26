@@ -212,6 +212,48 @@ Summary:
                 trend_dir = "upward" if latest_slope > 0 else "downward"
                 context_parts.append(f"Trend: {trend_strength} {trend_dir} (slope: {latest_slope:.4f})")
         
+        # Check for Liquidity Sentiment Profile (NEW)
+        lsp_poc_cols = [col for col in df.columns if 'lsp_poc_price' in col.lower()]
+        if lsp_poc_cols:
+            poc_price = df[lsp_poc_cols[0]].iloc[-1] if not df[lsp_poc_cols[0]].isna().all() else None
+            if poc_price and 'close' in df.columns:
+                current_price = df['close'].iloc[-1]
+                price_diff_pct = ((current_price - poc_price) / poc_price) * 100
+                
+                # Check if price is near high/low value areas
+                hv_low_col = 'lsp_high_value_low'
+                hv_high_col = 'lsp_high_value_high'
+                lv_low_col = 'lsp_low_value_low'
+                lv_high_col = 'lsp_low_value_high'
+                
+                if all(col in df.columns for col in [hv_low_col, hv_high_col]):
+                    hv_low = df[hv_low_col].iloc[-1]
+                    hv_high = df[hv_high_col].iloc[-1]
+                    
+                    if not pd.isna(hv_low) and not pd.isna(hv_high):
+                        if hv_low <= current_price <= hv_high:
+                            context_parts.append(f"Price in high-liquidity zone (POC: {poc_price:.2f})")
+                        elif lv_low_col in df.columns and lv_high_col in df.columns:
+                            lv_low = df[lv_low_col].iloc[-1]
+                            lv_high = df[lv_high_col].iloc[-1]
+                            if not pd.isna(lv_low) and not pd.isna(lv_high) and lv_low <= current_price <= lv_high:
+                                context_parts.append(f"Price in low-liquidity zone - potential breakout area")
+        
+        # Check for Candlestick Patterns (NEW)
+        cdl_cols = [col for col in df.columns if col.startswith('CDL_')]
+        if cdl_cols:
+            # Check latest row for any active patterns
+            latest_patterns = []
+            for col in cdl_cols:
+                val = df[col].iloc[-1]
+                if not pd.isna(val) and val != 0:
+                    pattern_name = col.replace('CDL_', '').replace('_', ' ').title()
+                    signal = "Bullish" if val > 0 else "Bearish"
+                    latest_patterns.append(f"{signal} {pattern_name}")
+            
+            if latest_patterns:
+                context_parts.append(f"Candlestick patterns: {', '.join(latest_patterns[:3])}")  # Limit to 3
+        
         if context_parts:
             return "**Technical Indicators:**\n" + "\n".join(f"- {part}" for part in context_parts)
         return ""
