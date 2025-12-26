@@ -67,13 +67,13 @@ stages:
     deps:
     - path: data/processed
       hash: md5
-      md5: 8ea8a34868e30e6a5033c6e1eaaa1830.dir
-      size: 7403608
+      md5: d3264a9993b64cb2eb9080a2799f8fe6.dir
+      size: 7372001
       nfiles: 2
     - path: ml_orderflow/pipelines/train.py
       hash: md5
-      md5: eb3076233d9787c53f60b028cf6f1784
-      size: 8635
+      md5: 60adc2a3dcbf8e92e0bb3d4ff6562ec5
+      size: 8684
     params:
       params.yaml:
         mlflow:
@@ -96,26 +96,26 @@ stages:
     outs:
     - path: models/ml_orderflow.pkl
       hash: md5
-      md5: 0668ccf0f2be20a81618bcf3df667408
-      size: 403332
+      md5: 637bd584d13e1421f537a81a9e700216
+      size: 425796
   inference:
     cmd: uv run python -m ml_orderflow.pipelines.inference
     deps:
     - path: data/processed
       hash: md5
-      md5: 78b307bbce176d51afdbbbbee90bdf99.dir
-      size: 6004609
-      nfiles: 1
+      md5: d3264a9993b64cb2eb9080a2799f8fe6.dir
+      size: 7372001
+      nfiles: 2
     - path: ml_orderflow/pipelines/inference.py
       hash: md5
-      md5: 6d78a4ffb26db8d7b80b4e72a469c10e
-      size: 5590
-    - path: models/ml_orderflow_model.pkl
+      md5: 299d39504520dba2243a7559da5a57d7
+      size: 6306
+    - path: models/ml_orderflow.pkl
       hash: md5
-      md5: 000af352fb64dfe58f223bddabd2c097
-      size: 401280
+      md5: 637bd584d13e1421f537a81a9e700216
+      size: 425796
     outs:
     - path: data/results/inferences.csv
       hash: md5
-      md5: 80a1e2f93202492fc78597048d7568d7
-      size: 2897
+      md5: e10a351e86cd20b0cc5328455e8a4d71
+      size: 741
